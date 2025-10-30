@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Wypożyczalnia biblioteki</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>📚 Mała biblioteka</h1>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Dodaj czytelnika</h2>
+      <form id="memberForm">
+        <input type="text" id="memberName" placeholder="Imię i nazwisko" required />
+        <input type="email" id="memberEmail" placeholder="Email" required />
+        <button type="submit">Dodaj</button>
+      </form>
+      <p id="memberMsg" class="msg"></p>
+      <ul id="membersList"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Dodaj książkę</h2>
+      <form id="bookForm">
+        <input type="text" id="bookTitle" placeholder="Tytuł" required />
+        <input type="text" id="bookAuthor" placeholder="Autor" required />
+        <input type="number" id="bookCopies" placeholder="Egzemplarze" min="1" value="1" />
+        <button type="submit">Dodaj</button>
+      </form>
+      <p id="bookMsg" class="msg"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Książki</h2>
+      <table id="booksTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tytuł</th>
+            <th>Autor</th>
+            <th>Dostępne</th>
+            <th>Wypożycz</th>
+          </tr>
+        </thead>
+        <tbody id="booksBody"></tbody>
+      </table>
+      <p id="booksMsg" class="msg"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Aktywne wypożyczenia</h2>
+      <table id="loansTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Czytelnik</th>
+            <th>Książka</th>
+            <th>Data wypożyczenia</th>
+            <th>Termin</th>
+            <th>Zwrot</th>
+          </tr>
+        </thead>
+        <tbody id="loansBody"></tbody>
+      </table>
+      <p id="loansMsg" class="msg"></p>
+    </section>
+  </main>
+
+  <script>
+    const API = '/api';
+
+    async function fetchMembers() {
+      const res = await fetch(`${API}/members`);
+      return res.json();
+    }
+
+    async function fetchBooks() {
+      const res = await fetch(`${API}/books`);
+      return res.json();
+    }
+
+    async function fetchLoans() {
+      const res = await fetch(`${API}/loans`);
+      return res.json();
+    }
+
+    // render members (prosta lista, można brać ID do wypożyczania)
+    async function renderMembers() {
+      const list = document.getElementById('membersList');
+      list.innerHTML = '';
+      const members = await fetchMembers();
+      members.forEach(m => {
+        const li = document.createElement('li');
+        li.textContent = `${m.id}. ${m.name} (${m.email})`;
+        list.appendChild(li);
+      });
+    }
+
+    async function renderBooks() {
+      const tbody = document.getElementById('booksBody');
+      tbody.innerHTML = '';
+      const books = await fetchBooks();
+
+      // żeby mieć kogo wypożyczyć, pobierz członków
+      const members = await fetchMembers();
+
+      books.forEach(book => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${book.id}</td>
+          <td>${book.title}</td>
+          <td>${book.author}</td>
+          <td>${book.available} / ${book.copies}</td>
+          <td></td>
+        `;
+        const btnCell = tr.querySelector('td:last-child');
+
+        const select = document.createElement('select');
+        members.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = `${m.name}`;
+          select.appendChild(opt);
+        });
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Wypożycz';
+        btn.addEventListener('click', async () => {
+          if (!members.length) {
+            alert('Najpierw dodaj czytelnika!');
+            return;
+          }
+          const member_id = select.value;
+          const res = await fetch(`${API}/loans/borrow`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ member_id, book_id: book.id })
+          });
+          if (res.status === 201) {
+            document.getElementById('booksMsg').textContent = 'Wypożyczono.';
+            await renderBooks();
+            await renderLoans();
+          } else {
+            const err = await res.json();
+            alert('Błąd: ' + err.error);
+          }
+        });
+
+        btnCell.appendChild(select);
+        btnCell.appendChild(btn);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function renderLoans() {
+      const tbody = document.getElementById('loansBody');
+      tbody.innerHTML = '';
+      const loans = await fetchLoans();
+      loans
+        .filter(l => !l.return_date)
+        .forEach(loan => {
+          const tr = document.createElement('tr');
+          const loanDate = new Date(loan.loan_date).toLocaleDateString();
+          const dueDate = new Date(loan.due_date).toLocaleDateString();
+          tr.innerHTML = `
+            <td>${loan.id}</td>
+            <td>${loan.member_name}</td>
+            <td>${loan.book_title}</td>
+            <td>${loanDate}</td>
+            <td>${dueDate}</td>
+            <td></td>
+          `;
+          const btnCell = tr.querySelector('td:last-child');
+          const btn = document.createElement('button');
+          btn.textContent = 'Zwróć';
+          btn.addEventListener('click', async () => {
+            const res = await fetch(`${API}/loans/return`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ loan_id: loan.id })
+            });
+            if (res.ok) {
+              document.getElementById('loansMsg').textContent = 'Zwrócono.';
+              await renderBooks();
+              await renderLoans();
+            } else {
+              const err = await res.json();
+              alert('Błąd: ' + err.error);
+            }
+          });
+          btnCell.appendChild(btn);
+          tbody.appendChild(tr);
+        });
+    }
+
+    // formularz członka
+    document.getElementById('memberForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('memberName').value;
+      const email = document.getElementById('memberEmail').value;
+      const res = await fetch(`${API}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email })
+      });
+      const msg = document.getElementById('memberMsg');
+      if (res.status === 201) {
+        msg.textContent = 'Dodano czytelnika.';
+        e.target.reset();
+        await renderMembers();
+        await renderBooks(); // żeby dropdown w książkach się odświeżył
+      } else {
+        const err = await res.json();
+        msg.textContent = 'Błąd: ' + err.error;
+        msg.classList.add('error');
+      }
+    });
+
+    // formularz książki
+    document.getElementById('bookForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const title = document.getElementById('bookTitle').value;
+        const author = document.getElementById('bookAuthor').value;
+        const copies = document.getElementById('bookCopies').value;
+        const res = await fetch(`${API}/books`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, author, copies })
+        });
+        const msg = document.getElementById('bookMsg');
+        const data = await res.json();
+
+        if (res.status === 201) {
+        msg.textContent = 'Dodano nową książkę.';
+        msg.classList.remove('error');
+        msg.classList.add('success');
+        e.target.reset();
+        await renderBooks();
+        } else if (res.status === 200) {
+        msg.textContent = data.message || 'Zaktualizowano książkę.';
+        msg.classList.remove('error');
+        msg.classList.add('success');
+        e.target.reset();
+        await renderBooks();
+        } else {
+        msg.textContent = 'Błąd: ' + (data.error || 'Nieznany błąd.');
+        msg.classList.remove('success');
+        msg.classList.add('error');
+        }
+    });
+
+    // init
+    (async () => {
+      await renderMembers();
+      await renderBooks();
+      await renderLoans();
+    })();
+  </script>
+</body>
+</html>
