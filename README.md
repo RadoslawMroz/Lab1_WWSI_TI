@@ -2,7 +2,7 @@
 
 Instrukcja inicjalizacji strony projektu "Mała biblioteka"
 
-# Instalacja Node.js na hoście.
+# Instalacja Node.js na hoście (tu jest już zainstalowany).
 > node --version
 v22.12.0
 
